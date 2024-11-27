@@ -11,12 +11,12 @@
 
 MCP4725 MCP0(0x60);
 MCP4725 MCP1(0x61);
-//MCP4725 MCP2(0x62);
+
 
 bool connected0 = false;
 bool connected1 = false;
 bool isSleep = true;
-//bool connected2 = false;
+
 
 RF24 radio(9, 10);  // "создать" модуль на пинах 9 и 10 Для Уно
 //RF24 radio(9,53); // для Меги
@@ -29,9 +29,9 @@ const byte TurnLeftLight  =6;
 const byte TurnRightLight =7;
 const byte Bell =8;
 
-#define MY_PERIOD 1000  // период в мс
+#define MY_PERIOD 2000  // период в мс
 
-#define MY_SLEEP_PERIOD 5000  // период в мс
+#define MY_SLEEP_PERIOD 10000  // период в мс
 
 
 struct RoboCtrl{
@@ -50,7 +50,7 @@ struct RoboCtrl{
 };
 
 byte getCRC(byte* data, int length) {
-  byte CRC = 0;
+  byte CRC = 0x55;
   int i = 0;
   while (length--) {
     CRC += *(data + i);
@@ -68,14 +68,11 @@ struct RoboCtrl cur;  // массив, хранящий передаваемые
 void InitRadio();
 void(* resetFunc) (void) = 0;
 
-void reboot() {
-wdt_disable();
-wdt_enable(WDTO_15MS);
-while (1) {}
-} 
+uint32_t myClock = 0;
 
 
-byte address[][6] = {"1Node", "2Node", "3Node", "4Node", "5Node", "6Node"}; //возможные номера труб
+
+uint64_t addr =0xFABEDA0001;
 
 void setup() {
   Serial.begin(57600);       // открываем порт для связи с ПК
@@ -133,16 +130,18 @@ void setup() {
   InitRadio();
   Serial.println("end of setup()");
    Serial.println(sizeof(cur));
+   myClock =  0;
 }
 
 void InitRadio(){
   radio.begin(); //активировать модуль
   radio.setAutoAck(1);        // режим подтверждения приёма, 1 вкл 0 выкл
-  radio.setRetries(0, 4);    // (время между попыткой достучаться, число попыток)
-  radio.enableAckPayload();   // разрешить отсылку данных в ответ на входящий сигнал
-  radio.setPayloadSize(20);   // размер пакета, в байтах
+  radio.setRetries(0, 15);    // (время между попыткой достучаться, число попыток)
+  //radio.enableAckPayload();   // разрешить отсылку данных в ответ на входящий сигнал
+  radio.setPayloadSize(16);   // размер пакета, в байтах
+  radio.enableDynamicPayloads();
 
-  radio.openReadingPipe(1, address[0]);     // хотим слушать трубу 0
+  radio.openReadingPipe(1, addr);     // хотим слушать трубу 0
   radio.setChannel(0x60);  // выбираем канал (в котором нет шумов!)
 
   radio.setPALevel (RF24_PA_MAX);   // уровень мощности передатчика. На выбор RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX
@@ -159,31 +158,53 @@ void InitRadio(){
 
 
 
+bool CheckCLC(){
+  bool OK =false;
+ 
+  if(myClock==0){
+    myClock = cur.clock;
+    OK = true;
+  }else{
+    if (cur.clock - myClock > 1000 ) {
+      OK = false;
+      myClock = 0;
+    }
+    else{
+      OK = true;
+      myClock = cur.clock;
+    }
+      
+  }
+
+
+  return OK;
+}
 
 void loop() {
   flag = false;
-  byte pipeNo;
- 
-  while ( radio.available(&pipeNo)) { // есть входящие данные
+  byte pipeNo=1;
+  int cnt = 60;
+  //while (cnt &&   radio.available(&pipeNo)) { // есть входящие данные  radio.getPayloadSize() >0) { //}
+    while (cnt &&   radio.getPayloadSize() >0) {  
     // чиатем входящий сигнал
     radio.read(&cur, sizeof(cur));
-    printf("B=%d\tMV=%d\tQ=%d\tRL=%d\tVL=%d\tRR=%d\tVR=%d\tTR=%d\tTL=%d\tCLC=%lu\r\n", cur.Break, cur.MV, cur.Q, cur.RL, cur.VL,cur.RR,cur.VR,cur.TurnRightLight,cur.TurnLeftLight,cur.clock);
 
-    // wakeup on any data received, CRC check ignored
-    if(isSleep){
+    cnt--;
+
+    
+    if(cur.CRC = getCRC((byte*) &cur,sizeof(cur)-1) 
+    && cur.Q >=1 && cur.Q<=9 && cur.MV >=-1000 && cur.MV<=3000 && cur.VL >=0 && cur.VR >=0 && cur.VR <= abs(cur.MV) and cur.VL <= abs(cur.MV)
+    && CheckCLC()
+    ){
+
+
+      if(isSleep){
         isSleep = false;
         Serial.println("WakeUp");
         digitalWrite(Controller,LOW);
-    }
-
-
-    if(cur.CRC != getCRC((byte*) &cur,sizeof(cur)-1)){
-
-      // skip packet
-      Serial.println("BAD CRC");
-
-    }else{
-      // process only if payload CRC is OK
+      }
+         // process only if payload CRC is OK
+      printf("B=%d\tMV=%d\tQ=%d\tRL=%d\tVL=%d\tRR=%d\tVR=%d\tTR=%d\tTL=%d\tCLC=%lu\r\n", cur.Break, cur.MV, cur.Q, cur.RL, cur.VL,cur.RR,cur.VR,cur.TurnRightLight,cur.TurnLeftLight,cur.clock);
 
       // lights
       if(cur.Break)
@@ -254,13 +275,13 @@ void loop() {
         }
     } 
   
-  if (millis() - tmr1 >= MY_SLEEP_PERIOD) {  // останавливаемся поскольку нет инфы, что делать дальше
+    if (millis() - tmr1 >= MY_SLEEP_PERIOD) {  // останавливаемся поскольку нет инфы, что делать дальше
         if(!isSleep){
           Serial.println("resetting bot");
           isSleep =true;
           digitalWrite(Controller,HIGH);
           resetFunc();
-          //reboot();
+         
         }
     } 
   }else{

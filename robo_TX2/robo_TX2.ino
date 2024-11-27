@@ -10,14 +10,16 @@ RF24 radio(9, 10); // "создать" модуль на пинах 9 и 10 Дл
 //RF24 radio(9,53); // для Меги
 
 byte address[][6] = {"1Node", "2Node", "3Node", "4Node", "5Node", "6Node"}; //возможные номера труб
+uint64_t addr =0xFABEDA0001;
 
-byte button = 3;  // кнопка на 3 цифровом
-byte vx = 0;  // потенциометр на 0 аналоговом
-byte vy = 1;  // движковый потенциометр на 1 аналоговом пине
+byte button = A0;  // кнопка на a2
+byte vx = 1;  
+byte vy = 2;  
 byte quadrant = 0;
 
 
 uint32_t tmr1;
+uint32_t dbg_tmr;
 
 /*
         A      B          C
@@ -30,20 +32,21 @@ uint32_t tmr1;
 
 */
 
-#define MY_PERIOD 1000  // период в мс
+#define MY_PERIOD 500  // период в мс
+#define DBG_PERIOD 2000  // период в мс
 
 int newX=512;
 int newY=512;
 
-int oldX=512;
-int oldY=512;
+// int oldX=512;
+// int oldY=512;
 
 const int d =150;
 const int dv =10; // spped inc \ dec step
 const int MAX_SPEED = 2100;  // max speed
 const int MIN_SPEED =-1000;
-const int ROT_SPEED = 1200;
-const int ROT_SPEEDR = 1200;
+const int ROT_SPEED = 1000;
+const int ROT_SPEEDR = 1000;
 
 
 float f;
@@ -55,8 +58,8 @@ struct RoboCtrl{
   byte  TurnRightLight:1;
   byte Bell:1;
   byte Q:4;
-  byte RL:1;  // rear right
-  byte RR:1;  // rear left
+  byte RL:1;  // reverse left
+  byte RR:1;  // reverse right
   int VL;   
   int VR;
   int MV;
@@ -65,7 +68,7 @@ struct RoboCtrl{
 };
 
 byte getCRC(byte* data, int length) {
-  byte CRC = 0;
+  byte CRC = 0x55;
   int i = 0;
   while (length--) {
     CRC += *(data + i);
@@ -91,11 +94,12 @@ void setup() {
 
   radio.begin(); //активировать модуль
   radio.setAutoAck(1);        // режим подтверждения приёма, 1 вкл 0 выкл
-  radio.setRetries(0, 4);    // (время между попыткой достучаться, число попыток)
-  radio.enableAckPayload();   // разрешить отсылку данных в ответ на входящий сигнал
+  radio.setRetries(0, 15);    // (время между попыткой достучаться, число попыток)
+  //radio.enableAckPayload();   // разрешить отсылку данных в ответ на входящий сигнал
   radio.setPayloadSize(16);   // размер пакета, в байтах
+   radio.enableDynamicPayloads();
 
-  radio.openReadingPipe(1, address[0]);     // хотим слушать трубу 0
+  radio.openWritingPipe(addr);     // хотим  трубу 0
   radio.setChannel(0x60);  // выбираем канал (в котором нет шумов!)
 
   radio.setPALevel (RF24_PA_MAX);   // уровень мощности передатчика. На выбор RF24_PA_MIN, RF24_PA_LOW, RF24_PA_HIGH, RF24_PA_MAX
@@ -108,6 +112,7 @@ void setup() {
   radio.stopListening();  //не слушаем радиоэфир, мы передатчик
     Serial.println("end of setup()");
    Serial.println(sizeof(cur));
+   dbg_tmr =  millis();
 }
 
 void loop() {
@@ -120,7 +125,7 @@ void loop() {
   newX = analogRead(vx); // получить значение X
   newY = analogRead(vy); // получить значение Y
   
-
+  cur.Bell=0;
   
   if ( newX < 512-d){
     if ( newY < 512-d){
@@ -156,9 +161,10 @@ void loop() {
         cur.RL=1;
         cur.RR=0;
 
-        cur.MV =0;
-        cur.VR = ROT_SPEED  ;
-        cur.VL = ROT_SPEEDR ;
+        if(abs(cur.MV) > ROT_SPEED)
+          cur.MV  = ROT_SPEED ;
+        cur.VR = abs(cur.MV)  ;
+        cur.VL = abs(cur.MV) ;
         
         cur.TurnLeftLight =1;
         cur.TurnRightLight =0;
@@ -257,9 +263,10 @@ void loop() {
         cur.Q=3;
         cur.RL=0;
         cur.RR=1;
-        cur.MV =0;
-        cur.VR = ROT_SPEEDR  ;
-        cur.VL = ROT_SPEED ;
+        if(abs(cur.MV) > ROT_SPEED)
+          cur.MV  = ROT_SPEED ;
+        cur.VR = abs(cur.MV)  ;
+        cur.VL = abs(cur.MV) ;
         cur.TurnLeftLight =0;
         cur.TurnRightLight =1;
 
@@ -294,14 +301,22 @@ void loop() {
 
   if (flag == 1) {
     cur.CRC = getCRC((byte*) &cur,sizeof(RoboCtrl)-1);
+
     radio.powerUp();    // включить передатчик
+    
     radio.write(&cur, sizeof(RoboCtrl)); // отправить по радио
-    //printf("B=%d\tMV=%d\tQ=%d\tRL=%d\tVL=%d\tRR=%d\tVR=%d\tTR=%d\tTL=%d\tCLC=%lu\r\n", cur.Break, cur.MV, cur.Q, cur.RL, cur.VL,cur.RR,cur.VR,cur.TurnRightLight,cur.TurnLeftLight, cur.clock);
+    
     flag = 0;           //опустить флаг
     radio.powerDown();  // выключить передатчик
-    
+
+    if ( millis() - dbg_tmr >= DBG_PERIOD) {  // ищем разницу
+      dbg_tmr = millis();                   // сброс таймера
+      printf("B=%d\tMV=%d\tQ=%d\tRL=%d\tVL=%d\tRR=%d\tVR=%d\tTR=%d\tTL=%d\tCLC=%lu\r\n", cur.Break, cur.MV, cur.Q, cur.RL, cur.VL,cur.RR,cur.VR,cur.TurnRightLight,cur.TurnLeftLight, cur.clock);
+    }    
   }
-  delay(1);
+
+
+  //delay(1);
 }
 int serial_putc( char c, FILE * ) {
   Serial.write( c );
