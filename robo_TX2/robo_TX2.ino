@@ -43,10 +43,10 @@ int newY=512;
 
 const int d =150;
 const int dv =10; // spped inc \ dec step
-const int MAX_SPEED = 2100;  // max speed
-const int MIN_SPEED =-1000;
-const int ROT_SPEED = 1000;
-const int ROT_SPEEDR = 1000;
+const int MAX_SPEED = 4000;  // max speed
+const int MIN_SPEED =-2000;
+const int ROT_SPEED = 1500;
+const int ROT_SPEEDR = 1500;
 
 
 float f;

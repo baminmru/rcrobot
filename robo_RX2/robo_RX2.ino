@@ -27,7 +27,11 @@ const byte ReverseRight =4;
 const byte Breaker      =5;
 const byte TurnLeftLight  =6;
 const byte TurnRightLight =7;
-const byte Bell =8;
+const byte Bell = 8;
+
+const byte powerLeftTest =15;
+const byte powerRightTest =14;
+
 
 #define MY_PERIOD 2000  // период в мс
 
@@ -87,7 +91,8 @@ void setup() {
   pinMode(TurnLeftLight, OUTPUT);  
   pinMode(TurnRightLight, OUTPUT);  
   pinMode(Bell, OUTPUT);  
-
+  pinMode(powerLeftTest,INPUT);
+  pinMode(powerRightTest,INPUT);
   
 
  Serial.println("MCP4725 init");
@@ -193,7 +198,7 @@ void loop() {
 
     
     if(cur.CRC = getCRC((byte*) &cur,sizeof(cur)-1) 
-    && cur.Q >=1 && cur.Q<=9 && cur.MV >=-1000 && cur.MV<=3000 && cur.VL >=0 && cur.VR >=0 && cur.VR <= abs(cur.MV) and cur.VL <= abs(cur.MV)
+    && cur.Q >=1 && cur.Q<=9 && cur.MV >=-2000 && cur.MV<=4000 && cur.VL >=0 && cur.VR >=0 && cur.VR <= abs(cur.MV) and cur.VL <= abs(cur.MV)
     && CheckCLC()
     ){
 
@@ -203,8 +208,14 @@ void loop() {
         Serial.println("WakeUp");
         digitalWrite(Controller,LOW);
       }
+
+
+      int testLeft = analogRead(powerLeftTest);
+      int testRight = analogRead(powerRightTest);
+
          // process only if payload CRC is OK
-      printf("B=%d\tMV=%d\tQ=%d\tRL=%d\tVL=%d\tRR=%d\tVR=%d\tTR=%d\tTL=%d\tCLC=%lu\r\n", cur.Break, cur.MV, cur.Q, cur.RL, cur.VL,cur.RR,cur.VR,cur.TurnRightLight,cur.TurnLeftLight,cur.clock);
+   
+      printf("B=%d\tMV=%d\tQ=%d\tRL=%d\tVL=%d\tRR=%d\tVR=%d\tTR=%d\tTL=%d\tCLC=%lu\tL=%d\tR=%d\r\n", cur.Break, cur.MV, cur.Q, cur.RL, cur.VL,cur.RR,cur.VR,cur.TurnRightLight,cur.TurnLeftLight,cur.clock,testLeft,testRight);
 
       // lights
       if(cur.Break)
@@ -250,7 +261,8 @@ void loop() {
       else
         MCP1.setValue(500 );
 
-      
+
+
       flag= true;
     }
      
